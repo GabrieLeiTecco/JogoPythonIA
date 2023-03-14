@@ -82,5 +82,93 @@ class Passaro:
                 self.angulo -= self.VELOCIDADE_ROTACAO # Limita a rotação
 
     # Função desenhar (coloca o passaro na tela)
-    def desenhar(self):
-        
+    def desenhar(self, tela):
+        # definir qual imagem do passaro vai ser usada
+        self.contagem_imagem =+ 1
+
+        # Definindo a animação do passaro
+        if self.contagem_imagem < self.TEMPO_ANIMACAO:
+            self.imagem = self.IMGS[0]
+        elif self.contagem_imagem < self.TEMPO_ANIMACAO*2:
+            self.imagem = self.IMGS[1]
+        elif self.contagem_imagem < self.TEMPO_ANIMACAO*3:
+            self.imagem = self.IMGS[2]
+        elif self.contagem_imagem < self.TEMPO_ANIMACAO*4:
+            self.imagem = self.IMGS[1]
+        elif self.contagem_imagem < self.TEMPO_ANIMACAO*4 + 1:
+            self.imagem = self.IMGS[0]
+            self.contagem_imagem = 0
+
+        # se o passaro estiver caindo não vai bater asa
+        if self.angulo <= -80:
+            self.imagem = self.IMGS[1]
+            # detalhe para o passaro bater asa pra baixo depois de cair
+            self.contagem_imagem = self.TEMPO_ANIMACAO+2
+
+        # desenhar a imagem
+        # armazena a imagem do passaro no angulo que ela esta
+        imagem_rotacionada = pygame.transform.rotate(self.imagem, self.angulo)
+        # armazena o valor do centro da imagem usando de base o valor superior esquerdo da imagem
+        pos_centro_imagem = self.imagem.get_rect(topleft=(self.x, self.y)).center
+        # cria o retangulo da imagem com o centro dela obtido acima
+        retangulo = imagem_rotacionada.get_rect(center=pos_centro_imagem)
+        # insere a imagem na tela, usando de base os dados acima
+        tela.blit(imagem_rotacionada, retangulo.topleft)
+
+    # Função colisão/mascara
+    def get_mask(self):
+        # Esse codigo cria uma mascara para fazer uma colisão pixel perfect
+        pygame.mask.from_surface(self.imagem)
+
+# Classe do cano
+class cano:
+    # constantes
+    DISTANCIA = 200
+    VELOCIDADE = 5
+
+    def __init__(self, x):
+        self.x = x
+        self.altura = 0
+        self.pos_topo = 0
+        self.pos_base = 0
+        # pega a imagem do cano e inverte ela verticalmente (img, flipar x, flipar y)
+        self.CANO_TOPO = pygame.transform.flip(IMG_CANO, False, True)
+        self.CANO_BASE = IMG_CANO
+        # identifica se o cano passou do passaro ou nao
+        self.passou = False
+        # Metodo que define altura do cano
+        self.definir_altura()
+
+    # Função definir altura
+    def definir_altura(self):
+        # gera um número aleatório dentro dos dois valores colocados
+        self.altura = random.randrange(50, 450)
+        # cria um cano usando de base o tamanho dele
+        self.pos_topo = self.altura - self.CANO_TOPO.get_height()
+        self.pos_base = self.altura + self.DISTANCIA
+
+    # Função mover
+    def mover(self):
+        self.x -= self.VELOCIDADE
+
+    # Função desenhar
+    def desenhar(self, tela):
+        tela.blit(self.CANO_TOPO, (self.x, self.pos_topo))
+        tela.blit(self.CANO_BASE, (self.x, self.pos_base))
+
+    # Função colidir
+    def colidir(self, passaro):
+        passaro_mask = passaro.get_mask()
+        topo_mask = pygame.mask.from_surface(self.CANO_TOPO)
+        base_mask = pygame.mask.from_surface(self.CANO_BASE)
+
+        distancia_topo = (self.x - passaro.x, self.pos_topo - round(passaro.y))
+        distancia_topo = (self.x - passaro.x, self.pos_base - round(passaro.y))
+
+        topo_ponto = passaro_mask.overlap(topo_mask, distancia_topo)
+        base_ponto = passaro_mask.overlap(base_mask, distancia_base)
+
+        if base_ponto or topo_ponto:
+            return True
+        else:
+            return False
