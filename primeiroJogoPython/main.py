@@ -1,5 +1,6 @@
 import sys
 
+import neat.nn
 import pygame
 import random
 import os
@@ -9,6 +10,10 @@ import os
 # Definir como constante (Letra maiuscula)
 TELA_LARGURA = 500
 TELA_ALTURA = 800
+
+# Variaveis IA
+ia_jogando = True
+geracao = 0
 
 # Imagens
 # Primeiro um código para dobrar o tamanho da imagem para ela não ficar pequena
@@ -25,7 +30,7 @@ pygame.transform.scale2x(pygame.image.load(os.path.join('imgs', 'bird3.png')))
 
 # Fonte
 pygame.font.init() #Precisa iniciar a função de fontes
-FONTE_PONTOS = pygame.font.SysFont('arial', 50) # e colocar a fonte e o tamanho
+FONTE_PONTOS = pygame.font.SysFont('arial', 40) # e colocar a fonte e o tamanho
 # SysFont cria um objeto de uma fonte do sistema, fontes padrão em geral
 # (e caso não tenha a fonte que você colocou vai usar a fonte padrão do sistema)
 
@@ -230,14 +235,41 @@ def desenhar_tela(tela, passaros, canos, chao, pontos):
     texto = FONTE_PONTOS.render(f"Pontuação: {pontos}", 1, (255, 255, 255))
     # coloca o texto na tela
     tela.blit(texto, (TELA_LARGURA - 10 - texto.get_width(), 10))
+    if ia_jogando == True :
+        # cria o texto que vai mostrar a pontuação, (texto, com serifa 1 ou sem serifa 0, cor em rgb)
+        texto = FONTE_PONTOS.render(f"Geração: {geracao}", 1, (255, 255, 255))
+        # coloca o texto na tela
+        tela.blit(texto, (10  , 10))
+
     # desenha o chao na tela
     chao.desenhar(tela)
     # atualiza a tela
     pygame.display.update()
 
-def main():
-    # dando os parametros que cada classe precisa
-    passaros = [Passaro(230, 350)]
+def main(genomas, config): # parametros para IA
+    # variaveis ia
+    global geracao
+    geracao += 1
+
+    #codigo IA para criação de passaros
+    if ia_jogando:
+        redes = []
+        lista_genomas = []
+        passaros = []
+
+        # _ é uma variavel que nao queremos usar, ai colocamos _ pra ela ser ignorada
+        for _, genoma in genomas:
+            # metodo para criar rede neural
+            rede = neat.nn.FeedForwardNetwork.create(genoma, config)
+            redes.append(rede)
+            genoma.fitness = 0
+            lista_genomas.append(genoma)
+            passaros.append(Passaro(230, 350))
+
+    # criação de passaros sem IA
+    else:
+        passaros = [Passaro(230, 350)]
+
     chao = Chao(730)
     canos = [Cano(700)]
     # configurando a tela
@@ -263,16 +295,31 @@ def main():
                 quit()
                 sys.exit()
 
-            # se o evento for uma tecla pressionada
-            if evento.type == pygame.KEYDOWN:
-                # se for o espaço
-                if evento.key == pygame.K_SPACE:
-                    for passaro in passaros:
-                        passaro.pular()
+            if not ia_jogando:
+                # se o evento for uma tecla pressionada
+                if evento.type == pygame.KEYDOWN:
+                    # se for o espaço
+                    if evento.key == pygame.K_SPACE:
+                        for passaro in passaros:
+                            passaro.pular()
 
+        indice_cano = 0
+        if len(passaros) > 0:
+            if len(canos) > 1 and passaros[0].x > (canos[0].x + canos[0].CANO_TOPO.get_width()):
+                indice_cano = 1
+        else:
+            rodando = False
+            break
         # faz as coisas se moverem
-        for passaro in  passaros:
+        for i, passaro in  enumerate(passaros):
             passaro.mover()
+            # aumentar o fitness (pontuação da ia) ao andar pra frente
+            lista_genomas[i].fitness += 0.1
+            output = redes[i].activate((passaro.y,
+                                        abs(passaro.y - canos[indice_cano].altura),
+                                        abs(passaro.y - canos[indice_cano].pos_base)))
+            if output[0] > 0.5:
+                passaro.pular()
         chao.mover()
 
         # cria variaveis para a criação e remoção do cano
@@ -285,9 +332,17 @@ def main():
             for i, passaro in enumerate(passaros):
                 if cano.colidir(passaro):
                     # apaga o passaro
-                    passaros.pop(i)
-                    quit()
-                    sys.exit()
+
+                    if ia_jogando:
+                        lista_genomas[i].fitness -= 1
+                        lista_genomas.pop(i)
+                        redes.pop(i)
+                        passaros.pop(i)
+                    else:
+                        passaros.pop(i)
+                        quit()
+                        sys.exit()
+
                 # verifica se a função cano.passou é falsa mas o passaro passou do cano
                 if not cano.passou and passaro.x > cano.x:
                     # ativa a função cano passou
@@ -307,22 +362,42 @@ def main():
             pontos += 1
             # cria um cano fora da tela
             canos.append(Cano(600))
+            if ia_jogando:
+                for genoma in lista_genomas:
+                    genoma.fitness += 5
         # verifica os canos dentro da lista remover_canos
         for cano in remover_canos:
             # remove os canos dentro dessa lista
             canos.remove(cano)
 
         for i, passaro in enumerate(passaros):
-            # verifica se o passaro saiu da tela por cima ou por baixo
             if (passaro.y + passaro.imagem.get_height()) > chao.y or passaro.y < 0:
-                # apaga o passaro que fizer isso
                 passaros.pop(i)
-                quit()
-                sys.exit()
+                if ia_jogando:
+                    lista_genomas.pop(i)
+                    redes.pop(i)
+                else:
+                    quit()
+                    pygame.quit()
+                    sys.exit()
 
         # desenha a tela
         desenhar_tela(tela, passaros, canos, chao, pontos)
 
+def rodar(caminho_config):
+    config = neat.config.Config(neat.DefaultGenome,
+                                neat.DefaultReproduction,
+                                neat.DefaultSpeciesSet,
+                                neat.DefaultStagnation,
+                                caminho_config)
+    populacao = neat.Population(config)
+    populacao.add_reporter(neat.StdOutReporter(True))
+    populacao.add_reporter(neat.StatisticsReporter())
+    if ia_jogando:
+        populacao.run(main, 50)
+    else:
+        main(None, None)
 # caso esse seja o arquivo principal, executa main()
 if __name__ == '__main__':
-    main()
+    caminho_config = 'config.txt'
+    rodar(caminho_config)
